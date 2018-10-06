@@ -23,15 +23,36 @@
                 android:layout_marginTop="10dp">
 
                 <TextView
-                    android:id="@+id/TextView04"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="X："
+                    android:text="light intensity："
                     android:textAppearance="?android:attr/textAppearanceMedium"
                     android:textColor="#FFFFFF" />
 
                 <TextView
-                    android:id="@+id/xAxis"
+                    android:id="@+id/light_intensity"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginLeft="10dp"
+                    android:text="0"
+                    android:textAppearance="?android:attr/textAppearanceMedium"
+                    android:textColor="#FFFFFF" />
+            </LinearLayout>
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginLeft="20dp"
+                android:layout_marginTop="10dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="trough in the last five seconds："
+                    android:textAppearance="?android:attr/textAppearanceMedium"
+                    android:textColor="#FFFFFF" />
+
+                <TextView
+                    android:id="@+id/troughNum"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginLeft="10dp"

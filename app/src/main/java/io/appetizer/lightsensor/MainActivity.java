@@ -13,6 +13,10 @@ import android.os.Message;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import java.util.HashMap;
+import java.util.Map;
+import android.util.Log;
+import java.util.Iterator;
 
 import org.achartengine.ChartFactory;
 import org.achartengine.GraphicalView;
@@ -26,7 +30,7 @@ import org.achartengine.renderer.XYSeriesRenderer;
 public class MainActivity extends Activity {
     public SensorManager sensorManager;
     public Sensor accelSensor;
-    TextView lightIntensity;
+    TextView lightIntensity,troughNum;
     SensorEventListener lightSensorListener;
     Handler avgHandler;
     Thread avgThread;
@@ -37,11 +41,19 @@ public class MainActivity extends Activity {
     private XYMultipleSeriesRenderer renderer;
     public int INTERVAL = 10;
     public int xMax = 500;
+    public int yMax = 150;
     public int index = 0;//指示这段时间一共写入了多少个数据
+    double ambientLight = 60.0;
     //在这里可以设置缓冲区的长度，用于求平均数
     double[] buffer = new double[100];
+    Map<Integer,Double> dataset = new HashMap<Integer,Double>();
+    Map<Integer,Double> trough = new HashMap<Integer,Double>();
     public double AVERAGE = 0;//存储平均值
     private int addX = -1;
+    double pre = 0;
+    int potentialkey = 0;
+    double potentialvalue = 0.0;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -49,16 +61,15 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
         sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
         avgHandler = new AvgHandler();
-        if (lightIntensity == null) {
-            lightIntensity = (TextView) findViewById(R.id.xAxis);
-        }
+        lightIntensity = (TextView) findViewById(R.id.light_intensity);
+        troughNum = (TextView) findViewById(R.id.troughNum);
         avgThread = new Thread(runnable);//定期更新平均值的线程启动
         avgThread.start();
         initListeners();
         accelSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT);
         sensorManager.registerListener(lightSensorListener, accelSensor, sensorManager.SENSOR_DELAY_UI);
         //初始化图表
-        initChart("Times(测量次数)", "单位", 0, xMax, 0, 100);
+        initChart("Times(测量次数)", "单位", 0, xMax, 0, yMax);
     }
 
 
@@ -245,11 +256,35 @@ public class MainActivity extends Activity {
     private void updateChart() {
         mDataset.removeSeries(series);
         series.add(addX++, AVERAGE);//最重要的一句话，以xy对的方式往里放值
-        if (addX > xMax) {
+        dataset.put(addX,AVERAGE);
+        if(AVERAGE<pre){
+            potentialkey = addX;
+            potentialvalue = AVERAGE;
+        }
+        if(AVERAGE>pre&&pre==potentialvalue&&pre<45&&pre!=0){
+            trough.put(potentialkey,potentialvalue);
+            trough.put(addX-1,pre);
+        }
+        if (addX > xMax-1) {
             renderer.setXAxisMin(addX - xMax);
             renderer.setXAxisMax(addX);
+            dataset.remove(addX - xMax);
         }
         mDataset.addSeries(series);
         chart.invalidate();
+        pre = AVERAGE;
+        if(troughNum!=null) troughNum.setText(countTrough(addX)+"");
+    }
+
+    private int countTrough(int index){
+        int pre = index - 500;
+        int num = 0;
+        Iterator<Map.Entry<Integer, Double>> iterator = trough.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<Integer, Double> entry = iterator.next();
+            int key = entry.getKey();
+            if(key>pre) num++;
+        }
+        return num/2;
     }
 }
