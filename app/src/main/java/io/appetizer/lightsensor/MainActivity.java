@@ -13,20 +13,19 @@ import android.os.Message;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Button;
 import android.media.MediaPlayer;
-import android.os.Environment;
-import 	android.content.res.AssetFileDescriptor;
+import android.content.res.AssetFileDescriptor;
+
 import java.util.HashMap;
 import java.util.Map;
-import android.view.View;
 import java.util.Iterator;
-import java.io.File;
+
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.widget.Toast;
+import android.media.AudioManager;
 
 
 import org.achartengine.ChartFactory;
@@ -40,9 +39,9 @@ import org.achartengine.renderer.XYSeriesRenderer;
 
 public class MainActivity extends Activity {
     public SensorManager sensorManager;
+    private AudioManager mAudioManager;
     public Sensor accelSensor;
-    TextView lightIntensity,troughNum;
-    Button playButton,pauseButton,moreButton;
+    TextView lightIntensity, troughNum;
     SensorEventListener lightSensorListener;
     Handler avgHandler;
     Thread avgThread;
@@ -59,9 +58,9 @@ public class MainActivity extends Activity {
     int ambientLightIndex = 0;
     //在这里可以设置缓冲区的长度，用于求平均数
     double[] buffer = new double[100];
-    Map<Integer,Double> dataset = new HashMap<Integer,Double>();
-    Map<Integer,Double> trough = new HashMap<Integer,Double>();
-    Map<Integer,Double> realtrough = new HashMap<Integer,Double>();
+    Map<Integer, Double> dataset = new HashMap<Integer, Double>();
+    Map<Integer, Double> trough = new HashMap<Integer, Double>();
+    Map<Integer, Double> realtrough = new HashMap<Integer, Double>();
     public double AVERAGE = 0;//存储平均值
     private int addX = -1;
     double pre = 0;
@@ -69,17 +68,17 @@ public class MainActivity extends Activity {
     double potentialvalue = 0.0;
     private MediaPlayer mediaPlayer = new MediaPlayer();
     int lastindex = 0;
+    boolean start = false;
 
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
-        avgHandler = new AvgHandler();
-        avgThread = new Thread(runnable);//定期更新平均值的线程启动
-        avgThread.start();
         initListeners();
+        sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
+        mAudioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
+
         initViews();
         accelSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT);
         sensorManager.registerListener(lightSensorListener, accelSensor, sensorManager.SENSOR_DELAY_UI);
@@ -90,38 +89,14 @@ public class MainActivity extends Activity {
         } else {
             initMediaPlayer();//初始化播放器 MediaPlayer
         }
-
-        playButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                mediaPlayer.start();
-            }
-        });
-        pauseButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if(mediaPlayer.isPlaying()){
-                    mediaPlayer.pause();
-                }
-            }
-        });
-        moreButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if(mediaPlayer.isPlaying()){
-                    mediaPlayer.reset();
-                    initMediaPlayer();//初始化播放器 MediaPlayer
-                }
-            }
-        });
+        avgHandler = new AvgHandler();
+        avgThread = new Thread(runnable);//定期更新平均值的线程启动
+        avgThread.start();
     }
 
-    public void initViews(){
+    public void initViews() {
         lightIntensity = (TextView) findViewById(R.id.light_intensity);
         troughNum = (TextView) findViewById(R.id.troughNum);
-        playButton = (Button) findViewById(R.id.play);
-        pauseButton = (Button) findViewById(R.id.pause);
-        moreButton = (Button) findViewById(R.id.more);
     }
 
     private void initMediaPlayer() {
@@ -138,11 +113,11 @@ public class MainActivity extends Activity {
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        switch (requestCode){
+        switch (requestCode) {
             case 1:
-                if(grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED){
+                if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                     initMediaPlayer();
-                }else{
+                } else {
                     Toast.makeText(this, "拒绝权限，将无法使用程序。", Toast.LENGTH_LONG).show();
                     //finish();
                 }
@@ -171,7 +146,7 @@ public class MainActivity extends Activity {
         if (avgThread != null)
             avgThread.interrupt();
 
-        if(mediaPlayer != null){
+        if (mediaPlayer != null) {
             mediaPlayer.stop();
             mediaPlayer.release();
         }
@@ -188,8 +163,8 @@ public class MainActivity extends Activity {
                 // TODO Auto-generated method stub
                 //lightIntensity.setText(event.values[0] + "");
                 giveAverage(event.values[0]);//将当前测量的结果写入buffer，然后定期求buffer里面的平均值，并显示
+                if(!start) start = true;
             }
-
             @Override
             public void onAccuracyChanged(Sensor sensor, int accuracy) {
                 // TODO Auto-generated method stub
@@ -280,7 +255,7 @@ public class MainActivity extends Activity {
         public void handleMessage(Message msg) {
             // TODO Auto-generated method stub
             setAverageView();//显示平均值
-            updateChart();//更新图表，非常重要的方法
+            if(start) updateChart();//更新图表，非常重要的方法
             //把当前值存入数据库
         }
     }
@@ -306,7 +281,6 @@ public class MainActivity extends Activity {
         r.setFillPoints(fill);
         r.setLineWidth(2);//这是线宽
         renderer.addSeriesRenderer(r);
-
         return renderer;
     }
 
@@ -338,29 +312,30 @@ public class MainActivity extends Activity {
     }
 
     private void updateChart() {
+        addX++;
         mDataset.removeSeries(series);
-        series.add(addX++, AVERAGE);//最重要的一句话，以xy对的方式往里放值
-        if(AVERAGE>ambientLight){
+        series.add(addX, AVERAGE);//最重要的一句话，以xy对的方式往里放值
+        if (AVERAGE > ambientLight) {
             ambientLight = AVERAGE;
             ambientLightIndex = addX;
         }
-        if((addX-ambientLightIndex)>500){
+        if ((addX - ambientLightIndex) > 500) {
             ambientLight = AVERAGE;
             ambientLightIndex = addX;
         }
-        dataset.put(addX,AVERAGE);
-        if(AVERAGE<pre){
+        dataset.put(addX, AVERAGE);
+        if (AVERAGE < pre) {
             potentialkey = addX;
             potentialvalue = AVERAGE;
         }
-        if(AVERAGE>pre&&pre==potentialvalue&&pre<(0.7*ambientLight)&&pre!=0){
-            trough.put(potentialkey,potentialvalue);
-            trough.put(addX-1,pre);
-            realtrough.put(potentialkey,potentialvalue);
-            realtrough.put(addX-1,pre);
+        if (AVERAGE > pre && pre == potentialvalue && pre < (0.7 * ambientLight) && pre != 0) {
+            trough.put(potentialkey, potentialvalue);
+            trough.put(addX - 1, pre);
+            realtrough.put(potentialkey, potentialvalue);
+            realtrough.put(addX - 1, pre);
             lastindex = addX - 1;
         }
-        if (addX > xMax-1) {
+        if (addX > xMax - 1) {
             renderer.setXAxisMin(addX - xMax);
             renderer.setXAxisMax(addX);
             dataset.remove(addX - xMax);
@@ -368,52 +343,54 @@ public class MainActivity extends Activity {
         mDataset.addSeries(series);
         chart.invalidate();
         pre = AVERAGE;
-        if(troughNum!=null) troughNum.setText(countTrough(addX)+"");
+        if (troughNum != null) troughNum.setText(countTrough(addX) + "");
         gestureControl(addX);
     }
 
-    private int countTrough(int index){
+    private int countTrough(int index) {
         int pre = index - 500;
         int num = 0;
         Iterator<Map.Entry<Integer, Double>> iterator = trough.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<Integer, Double> entry = iterator.next();
             int key = entry.getKey();
-            if(key>pre) num++;
+            if (key > pre) num++;
         }
-        return num/2;
+        return num / 2;
     }
 
 
-    private void gestureControl(int index){
-        if((index-lastindex)<150) return;
-        int num = realtrough.size()/2;
+    private void gestureControl(int index) {
+        if ((index - lastindex) < 150) return;
+        int num = realtrough.size() / 2;
         System.out.println("realtime " + num);
-        switch(num){
+        switch (num) {
             case 1:
-                if(!mediaPlayer.isPlaying()){
+                if (!mediaPlayer.isPlaying()) {
                     mediaPlayer.start();
                 }
                 realtrough.clear();
                 break;
             case 2:
-                if(mediaPlayer.isPlaying()){
+                mAudioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC,
+                        AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI);
+                realtrough.clear();
+                break;
+            case 3:
+                mAudioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC,
+                        AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI);
+                realtrough.clear();
+                break;
+            case 4:
+                if (mediaPlayer.isPlaying()) {
                     mediaPlayer.pause();
                 }
                 realtrough.clear();
                 break;
-
-            /*case 3:
-                mediaPlayer.*/
-
             default:
                 break;
-
         }
     }
-
-
-
 
 
 }
