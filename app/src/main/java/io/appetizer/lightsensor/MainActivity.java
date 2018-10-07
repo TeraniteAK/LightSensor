@@ -13,10 +13,21 @@ import android.os.Message;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Button;
+import android.media.MediaPlayer;
+import android.os.Environment;
+import 	android.content.res.AssetFileDescriptor;
 import java.util.HashMap;
 import java.util.Map;
-import android.util.Log;
+import android.view.View;
 import java.util.Iterator;
+import java.io.File;
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.content.ContextCompat;
+import android.widget.Toast;
+
 
 import org.achartengine.ChartFactory;
 import org.achartengine.GraphicalView;
@@ -31,6 +42,7 @@ public class MainActivity extends Activity {
     public SensorManager sensorManager;
     public Sensor accelSensor;
     TextView lightIntensity,troughNum;
+    Button playButton,pauseButton,moreButton;
     SensorEventListener lightSensorListener;
     Handler avgHandler;
     Thread avgThread;
@@ -43,16 +55,20 @@ public class MainActivity extends Activity {
     public int xMax = 500;
     public int yMax = 150;
     public int index = 0;//指示这段时间一共写入了多少个数据
-    double ambientLight = 60.0;
+    double ambientLight = 0;
+    int ambientLightIndex = 0;
     //在这里可以设置缓冲区的长度，用于求平均数
     double[] buffer = new double[100];
     Map<Integer,Double> dataset = new HashMap<Integer,Double>();
     Map<Integer,Double> trough = new HashMap<Integer,Double>();
+    Map<Integer,Double> realtrough = new HashMap<Integer,Double>();
     public double AVERAGE = 0;//存储平均值
     private int addX = -1;
     double pre = 0;
     int potentialkey = 0;
     double potentialvalue = 0.0;
+    private MediaPlayer mediaPlayer = new MediaPlayer();
+    int lastindex = 0;
 
 
     @Override
@@ -61,15 +77,78 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
         sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
         avgHandler = new AvgHandler();
-        lightIntensity = (TextView) findViewById(R.id.light_intensity);
-        troughNum = (TextView) findViewById(R.id.troughNum);
         avgThread = new Thread(runnable);//定期更新平均值的线程启动
         avgThread.start();
         initListeners();
+        initViews();
         accelSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT);
         sensorManager.registerListener(lightSensorListener, accelSensor, sensorManager.SENSOR_DELAY_UI);
         //初始化图表
         initChart("Times(测量次数)", "单位", 0, xMax, 0, yMax);
+        if (ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(MainActivity.this, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, 1);
+        } else {
+            initMediaPlayer();//初始化播放器 MediaPlayer
+        }
+
+        playButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                mediaPlayer.start();
+            }
+        });
+        pauseButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if(mediaPlayer.isPlaying()){
+                    mediaPlayer.pause();
+                }
+            }
+        });
+        moreButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if(mediaPlayer.isPlaying()){
+                    mediaPlayer.reset();
+                    initMediaPlayer();//初始化播放器 MediaPlayer
+                }
+            }
+        });
+    }
+
+    public void initViews(){
+        lightIntensity = (TextView) findViewById(R.id.light_intensity);
+        troughNum = (TextView) findViewById(R.id.troughNum);
+        playButton = (Button) findViewById(R.id.play);
+        pauseButton = (Button) findViewById(R.id.pause);
+        moreButton = (Button) findViewById(R.id.more);
+    }
+
+    private void initMediaPlayer() {
+        try {
+            AssetFileDescriptor fd = getAssets().openFd("music.mp3");
+            mediaPlayer.setDataSource(fd.getFileDescriptor());
+            mediaPlayer.setLooping(true);//设置为循环播放
+            mediaPlayer.prepare();//初始化播放器MediaPlayer
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        switch (requestCode){
+            case 1:
+                if(grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED){
+                    initMediaPlayer();
+                }else{
+                    Toast.makeText(this, "拒绝权限，将无法使用程序。", Toast.LENGTH_LONG).show();
+                    //finish();
+                }
+                break;
+            default:
+        }
     }
 
 
@@ -91,6 +170,11 @@ public class MainActivity extends Activity {
 
         if (avgThread != null)
             avgThread.interrupt();
+
+        if(mediaPlayer != null){
+            mediaPlayer.stop();
+            mediaPlayer.release();
+        }
     }
 
 
@@ -256,14 +340,25 @@ public class MainActivity extends Activity {
     private void updateChart() {
         mDataset.removeSeries(series);
         series.add(addX++, AVERAGE);//最重要的一句话，以xy对的方式往里放值
+        if(AVERAGE>ambientLight){
+            ambientLight = AVERAGE;
+            ambientLightIndex = addX;
+        }
+        if((addX-ambientLightIndex)>500){
+            ambientLight = AVERAGE;
+            ambientLightIndex = addX;
+        }
         dataset.put(addX,AVERAGE);
         if(AVERAGE<pre){
             potentialkey = addX;
             potentialvalue = AVERAGE;
         }
-        if(AVERAGE>pre&&pre==potentialvalue&&pre<45&&pre!=0){
+        if(AVERAGE>pre&&pre==potentialvalue&&pre<(0.7*ambientLight)&&pre!=0){
             trough.put(potentialkey,potentialvalue);
             trough.put(addX-1,pre);
+            realtrough.put(potentialkey,potentialvalue);
+            realtrough.put(addX-1,pre);
+            lastindex = addX - 1;
         }
         if (addX > xMax-1) {
             renderer.setXAxisMin(addX - xMax);
@@ -274,6 +369,7 @@ public class MainActivity extends Activity {
         chart.invalidate();
         pre = AVERAGE;
         if(troughNum!=null) troughNum.setText(countTrough(addX)+"");
+        gestureControl(addX);
     }
 
     private int countTrough(int index){
@@ -287,4 +383,37 @@ public class MainActivity extends Activity {
         }
         return num/2;
     }
+
+
+    private void gestureControl(int index){
+        if((index-lastindex)<150) return;
+        int num = realtrough.size()/2;
+        System.out.println("realtime " + num);
+        switch(num){
+            case 1:
+                if(!mediaPlayer.isPlaying()){
+                    mediaPlayer.start();
+                }
+                realtrough.clear();
+                break;
+            case 2:
+                if(mediaPlayer.isPlaying()){
+                    mediaPlayer.pause();
+                }
+                realtrough.clear();
+                break;
+
+            /*case 3:
+                mediaPlayer.*/
+
+            default:
+                break;
+
+        }
+    }
+
+
+
+
+
 }
